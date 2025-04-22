@@ -58,7 +58,6 @@ contract GluexRouter is EthReceiver {
         IERC20 outputToken; // Token received as output from the route
         address payable inputReceiver; // Address to receive the input token
         address payable outputReceiver; // Address to receive the output token
-        uint256 inputAmount; // Amount of input token
         uint256 outputAmount; // Original output amount
         uint256 partnerFee; // Fee for the partner
         uint256 routingFee; // Fee for the routing operation
