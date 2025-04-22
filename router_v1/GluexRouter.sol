@@ -65,13 +65,13 @@ contract GluexRouter is EthReceiver {
         uint256 effectiveOutputAmount; // Effective output after deducting the routing fee
         uint256 minOutputAmount; // Minimum acceptable output amount
         bool isPermit2; // Whether to use Permit2 for token transfers
-        bytes uniquePID; // Unique identifier for the partner
+        bytes32 uniquePID; // Unique identifier for the partner
     }
 
     // Constants
     uint256 public _RAW_CALL_GAS_LIMIT = 5500;
-    uint256 public _MAX_FEE = 15; // 11 bps (0.11%)
-    uint256 public _MIN_FEE = 1; // 1 bps (0.01%)
+    uint256 public _MAX_FEE = 100; // 100 bps (1%)
+    uint256 public _MIN_FEE = 0; // 0 bps (0%)
     uint256 public _TOLERANCE = 1000;
 
     // State Variables
@@ -168,7 +168,6 @@ contract GluexRouter is EthReceiver {
         // Validate route parameters
         if (desc.minOutputAmount <= 0) revert("Negative slippage limit");
         if (desc.minOutputAmount > desc.outputAmount) revert("Slippage limit too large");
-        if (desc.inputToken == desc.outputToken) revert("Arbitrage not supported");
         if (desc.routingFee <= 0) revert("Negative routing fee");
         if (desc.partnerFee < 0) revert("Negative partner fee");
         if (
