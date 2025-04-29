@@ -2,7 +2,6 @@
 pragma solidity ^0.8.0;
 
 import {EthReceiver} from "./utils/EthReceiver.sol";
-import {Interaction} from "./base/RouterStructs.sol";
 import {IExecutor} from "./interfaces/IExecutor.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
 import {SafeERC20} from "./lib/SafeERC20.sol";
@@ -36,8 +35,8 @@ contract GluexRouter is EthReceiver {
      * @param routingFee The fee charged for the routing operation.
      * @param finalOutputAmount The actual output amount received after routing.
      */
-    event Routed(
-        bytes indexed uniquePID,
+    event Swapped(
+        bytes32 indexed uniquePID,
         address indexed userAddress,
         address outputReceiver,
         IERC20 inputToken,
@@ -53,25 +52,24 @@ contract GluexRouter is EthReceiver {
     /**
      * @dev A generic structure defining the parameters for a route.
      */
-    struct RouteDescription {
+    struct SwapDescription {
         IERC20 inputToken; // Token used as input for the route
         IERC20 outputToken; // Token received as output from the route
         address payable inputReceiver; // Address to receive the input token
         address payable outputReceiver; // Address to receive the output token
-        uint256 inputAmount; // Amount of input token
         uint256 outputAmount; // Original output amount
         uint256 partnerFee; // Fee for the partner
         uint256 routingFee; // Fee for the routing operation
         uint256 effectiveOutputAmount; // Effective output after deducting the routing fee
         uint256 minOutputAmount; // Minimum acceptable output amount
         bool isPermit2; // Whether to use Permit2 for token transfers
-        bytes uniquePID; // Unique identifier for the partner
+        bytes32 uniquePID; // Unique identifier for the partner
     }
 
     // Constants
     uint256 public _RAW_CALL_GAS_LIMIT = 5500;
-    uint256 public _MAX_FEE = 15; // 11 bps (0.11%)
-    uint256 public _MIN_FEE = 1; // 1 bps (0.01%)
+    uint256 public _MAX_FEE = 100; // 100 bps (1%)
+    uint256 public _MIN_FEE = 0; // 0 bps (0%)
     uint256 public _TOLERANCE = 1000;
 
     // State Variables
@@ -141,17 +139,20 @@ contract GluexRouter is EthReceiver {
     }
 
     /**
-     * @notice Executes a route using the specified executor and interactions.
-     * @param executor The executor contract that performs the interactions.
-     * @param desc The route description containing input, output, and fee details.
-     * @param interactions The interactions encoded for execution by the executor.
+     * @notice Executes a route using the specified executor and execution map.
+     * @param inputAmount The amount to be used as input in the dynamic swap.
+     * @param desc The swap description containing input, output, and fee details.
+     * @param executor The executor contract that ensures complex atomic settlements for dynamic inputs.
+     * @param executionMap The execution map to be followed by executor.
+     * @param deadline The timestamp up until when a dynamicSwap is valid.
      * @return finalOutputAmount The final amount of output token received.
      * @dev Ensures strict validation of slippage, routing fees, and input/output parameters.
      */
-    function swap(
+    function dynamicSwap(
+        uint256 inputAmount,
+        SwapDescription calldata desc,
         IExecutor executor,
-        RouteDescription calldata desc,
-        Interaction[] calldata interactions,
+        bytes calldata executionMap,
         uint256 deadline
     ) external payable returns (uint256 finalOutputAmount) {
         // Deadline check
@@ -168,7 +169,6 @@ contract GluexRouter is EthReceiver {
         // Validate route parameters
         if (desc.minOutputAmount <= 0) revert("Negative slippage limit");
         if (desc.minOutputAmount > desc.outputAmount) revert("Slippage limit too large");
-        if (desc.inputToken == desc.outputToken) revert("Arbitrage not supported");
         if (desc.routingFee <= 0) revert("Negative routing fee");
         if (desc.partnerFee < 0) revert("Negative partner fee");
         if (
@@ -186,21 +186,22 @@ contract GluexRouter is EthReceiver {
 
         // Handle native token input validation
         if (address(desc.inputToken) == _nativeToken) {
-            if (msg.value != desc.inputAmount) revert("Invalid native token input amount");
+            if (msg.value != inputAmount) revert("Invalid native token input amount");
         } else {
             if (msg.value != 0) revert("Invalid native token input amount");
             desc.inputToken.safeTransferFromUniversal(
                 msg.sender,
                 desc.inputReceiver,
-                desc.inputAmount,
+                inputAmount,
                 desc.isPermit2
             );
         }
 
-        // Execute interactions through the executor
+        // Execute execution map through the executor
         uint256 outputBalanceBefore = uniBalanceOf(IERC20(desc.outputToken), address(this));
-        IExecutor(executor).executeRoute{value: msg.value}(
-            interactions,
+        IExecutor(executor).executeDynamicRoute{value: msg.value}(
+            desc.inputToken,
+            executionMap,
             desc.outputToken
         );
         uint256 outputBalanceAfter = uniBalanceOf(IERC20(desc.outputToken), address(this));
@@ -223,12 +224,12 @@ contract GluexRouter is EthReceiver {
         // Transfer the final output amount to the receiver
         uniTransfer(IERC20(desc.outputToken), desc.outputReceiver, finalOutputAmount);
 
-        emit Routed(
+        emit Swapped(
             desc.uniquePID,
             msg.sender,
             desc.outputReceiver,
             desc.inputToken,
-            desc.inputAmount,
+            inputAmount,
             desc.outputToken,
             desc.outputAmount,
             desc.partnerFee,
