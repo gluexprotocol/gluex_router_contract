@@ -19,6 +19,7 @@ contract GluexRouter is EthReceiver {
     error InsufficientBalance();
     error NativeTransferFailed();
     error OnlyGlueTreasury();
+    error OnlyAuthorized();
     error ZeroAddress();
 
     // Events
@@ -75,15 +76,21 @@ contract GluexRouter is EthReceiver {
     // State Variables
     address public immutable _nativeToken; // Address of the native token (e.g., Ether on Ethereum)
     address internal immutable _gluexTreasury; // Address of the GlueX treasury contract
+    address internal immutable _gluexManager; // Address of GlueX manager
 
     /**
      * @dev Initializes the contract with the treasury address and native token address.
      * @param gluexTreasury The address of the Glue treasury contract.
      * @param nativeToken The address of the native token.
      */
-    constructor(address gluexTreasury, address nativeToken) {
+    constructor(
+        address gluexTreasury,
+        address gluexManager,
+        address nativeToken
+    ) {
         // Ensure the addresses are not zero
         checkZeroAddress(gluexTreasury);
+        checkZeroAddress(gluexManager);
 
         _gluexTreasury = gluexTreasury;
         _nativeToken = nativeToken;
@@ -98,11 +105,28 @@ contract GluexRouter is EthReceiver {
     }
 
     /**
+     * @dev Modifier to restrict access to authorized-only functions.
+     */
+    modifier onlyAuthorized() {
+        checkAuthorized();
+        _;
+    }
+
+    /**
      * @notice Verifies the caller is the Glue treasury.
      * @dev Reverts with `OnlyGlueTreasury` if the caller is not the treasury.
      */
     function checkTreasury() internal view {
         if (msg.sender != _gluexTreasury) revert OnlyGlueTreasury();
+    }
+
+    /**
+     * @notice Verifies the caller is authorized.
+     * @dev Reverts with `OnlyAuthorized` if the caller is not the treasury.
+     */
+    function checkAuthorized() internal view {
+        if (msg.sender != _gluexTreasury && msg.sender != _gluexManager)
+            revert OnlyAuthorized();
     }
 
     /**
@@ -144,7 +168,6 @@ contract GluexRouter is EthReceiver {
      * @param desc The swap description containing input, output, and fee details.
      * @param executor The executor contract that ensures complex atomic settlements for dynamic inputs.
      * @param executionMap The execution map to be followed by executor.
-     * @param deadline The timestamp up until when a dynamicSwap is valid.
      * @return finalOutputAmount The final amount of output token received.
      * @dev Ensures strict validation of slippage, routing fees, and input/output parameters.
      */
@@ -152,15 +175,13 @@ contract GluexRouter is EthReceiver {
         uint256 inputAmount,
         SwapDescription calldata desc,
         IExecutor executor,
-        bytes calldata executionMap,
-        uint256 deadline
+        bytes calldata executionMap
     ) external payable returns (uint256 finalOutputAmount) {
-        // Deadline check
-        if (block.timestamp > deadline) revert("Deadline passed");
-
         // Validate routing fee
-        if (desc.routingFee > (desc.outputAmount * _MAX_FEE) / 10000) revert("Routing fee too high");
-        if (desc.routingFee < (desc.outputAmount * _MIN_FEE) / 10000) revert("Routing fee too low");
+        if (desc.routingFee > (desc.outputAmount * _MAX_FEE) / 10000)
+            revert("Routing fee too high");
+        if (desc.routingFee < (desc.outputAmount * _MIN_FEE) / 10000)
+            revert("Routing fee too low");
 
         // Validate non-zero addresses
         checkZeroAddress(desc.inputReceiver);
@@ -168,9 +189,8 @@ contract GluexRouter is EthReceiver {
 
         // Validate route parameters
         if (desc.minOutputAmount <= 0) revert("Negative slippage limit");
-        if (desc.minOutputAmount > desc.outputAmount) revert("Slippage limit too large");
-        if (desc.routingFee <= 0) revert("Negative routing fee");
-        if (desc.partnerFee < 0) revert("Negative partner fee");
+        if (desc.minOutputAmount > desc.outputAmount)
+            revert("Slippage limit too large");
         if (
             desc.outputAmount <
             desc.effectiveOutputAmount +
@@ -186,7 +206,8 @@ contract GluexRouter is EthReceiver {
 
         // Handle native token input validation
         if (address(desc.inputToken) == _nativeToken) {
-            if (msg.value != inputAmount) revert("Invalid native token input amount");
+            if (msg.value != inputAmount)
+                revert("Invalid native token input amount");
         } else {
             if (msg.value != 0) revert("Invalid native token input amount");
             desc.inputToken.safeTransferFromUniversal(
@@ -198,31 +219,54 @@ contract GluexRouter is EthReceiver {
         }
 
         // Execute execution map through the executor
-        uint256 outputBalanceBefore = uniBalanceOf(IERC20(desc.outputToken), address(this));
+        uint256 outputBalanceBefore = uniBalanceOf(
+            IERC20(desc.outputToken),
+            address(this)
+        );
         IExecutor(executor).executeDynamicRoute{value: msg.value}(
             desc.inputToken,
             executionMap,
             desc.outputToken
         );
-        uint256 outputBalanceAfter = uniBalanceOf(IERC20(desc.outputToken), address(this));
+        uint256 outputBalanceAfter = uniBalanceOf(
+            IERC20(desc.outputToken),
+            address(this)
+        );
 
         // Calculate final output amount
         uint256 routingFee = 0;
-        if (outputBalanceAfter - outputBalanceBefore > desc.effectiveOutputAmount + desc.routingFee) {
-            finalOutputAmount = outputBalanceAfter - outputBalanceBefore - desc.routingFee;
+        if (
+            outputBalanceAfter - outputBalanceBefore >
+            desc.effectiveOutputAmount + desc.routingFee
+        ) {
+            finalOutputAmount =
+                outputBalanceAfter -
+                outputBalanceBefore -
+                desc.routingFee;
             routingFee = desc.routingFee;
-        } else if (outputBalanceAfter - outputBalanceBefore > desc.effectiveOutputAmount) {
+        } else if (
+            outputBalanceAfter - outputBalanceBefore >
+            desc.effectiveOutputAmount
+        ) {
             finalOutputAmount = desc.effectiveOutputAmount;
-            routingFee = outputBalanceAfter - outputBalanceBefore - desc.effectiveOutputAmount;
+            routingFee =
+                outputBalanceAfter -
+                outputBalanceBefore -
+                desc.effectiveOutputAmount;
         } else {
             finalOutputAmount = outputBalanceAfter - outputBalanceBefore;
         }
 
         // Ensure final output amount meets the minimum required
-        if (finalOutputAmount < desc.minOutputAmount) revert("Negative slippage too large");
+        if (finalOutputAmount < desc.minOutputAmount)
+            revert("Negative slippage too large");
 
         // Transfer the final output amount to the receiver
-        uniTransfer(IERC20(desc.outputToken), desc.outputReceiver, finalOutputAmount);
+        uniTransfer(
+            IERC20(desc.outputToken),
+            desc.outputReceiver,
+            finalOutputAmount
+        );
 
         emit Swapped(
             desc.uniquePID,
@@ -297,7 +341,7 @@ contract GluexRouter is EthReceiver {
      * @param gasLimit The new gas limit to be set.
      * @dev This function is restricted to the treasury.
      */
-    function setGasLimit(uint256 gasLimit) external onlyTreasury {
+    function setGasLimit(uint256 gasLimit) external onlyAuthorized {
         _RAW_CALL_GAS_LIMIT = gasLimit;
     }
 
@@ -306,7 +350,7 @@ contract GluexRouter is EthReceiver {
      * @param maxFee The new maximum fee to be set.
      * @dev This function is restricted to the treasury.
      */
-    function setMaxFee(uint256 maxFee) external onlyTreasury {
+    function setMaxFee(uint256 maxFee) external onlyAuthorized {
         _MAX_FEE = maxFee;
     }
 
@@ -315,7 +359,7 @@ contract GluexRouter is EthReceiver {
      * @param minFee The new minimum fee to be set.
      * @dev This function is restricted to the treasury.
      */
-    function setMinFee(uint256 minFee) external onlyTreasury {
+    function setMinFee(uint256 minFee) external onlyAuthorized {
         _MIN_FEE = minFee;
     }
 
@@ -324,7 +368,7 @@ contract GluexRouter is EthReceiver {
      * @param tolerance The new tolerance to be set.
      * @dev This function is restricted to the treasury.
      */
-    function setTolerance(uint256 tolerance) external onlyTreasury {
+    function setTolerance(uint256 tolerance) external onlyAuthorized {
         _TOLERANCE = tolerance;
     }
 }
