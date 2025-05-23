@@ -71,7 +71,6 @@ contract GluexRouter is EthReceiver {
     uint256 public _RAW_CALL_GAS_LIMIT = 5500;
     uint256 public _MAX_FEE = 100; // 100 bps (1%)
     uint256 public _MIN_FEE = 0; // 0 bps (0%)
-    uint256 public _TOLERANCE = 1000;
 
     // State Variables
     address public immutable _nativeToken; // Address of the native token (e.g., Ether on Ethereum)
@@ -125,8 +124,7 @@ contract GluexRouter is EthReceiver {
      * @dev Reverts with `OnlyAuthorized` if the caller is not the treasury.
      */
     function checkAuthorized() internal view {
-        if (msg.sender != _gluexTreasury && msg.sender != _gluexManager)
-            revert OnlyAuthorized();
+        if (msg.sender != _gluexTreasury && msg.sender != _gluexManager) revert OnlyAuthorized();
     }
 
     /**
@@ -178,10 +176,8 @@ contract GluexRouter is EthReceiver {
         bytes calldata executionMap
     ) external payable returns (uint256 finalOutputAmount) {
         // Validate routing fee
-        if (desc.routingFee > (desc.outputAmount * _MAX_FEE) / 10000)
-            revert("Routing fee too high");
-        if (desc.routingFee < (desc.outputAmount * _MIN_FEE) / 10000)
-            revert("Routing fee too low");
+        if (desc.routingFee > (desc.outputAmount * _MAX_FEE) / 10000) revert("Routing fee too high");
+        if (desc.routingFee < (desc.outputAmount * _MIN_FEE) / 10000) revert("Routing fee too low");
 
         // Validate non-zero addresses
         checkZeroAddress(desc.inputReceiver);
@@ -189,25 +185,11 @@ contract GluexRouter is EthReceiver {
 
         // Validate route parameters
         if (desc.minOutputAmount <= 0) revert("Negative slippage limit");
-        if (desc.minOutputAmount > desc.outputAmount)
-            revert("Slippage limit too large");
-        if (
-            desc.outputAmount <
-            desc.effectiveOutputAmount +
-                desc.partnerFee +
-                desc.routingFee -
-                _TOLERANCE ||
-            desc.outputAmount >
-            desc.effectiveOutputAmount +
-                desc.partnerFee +
-                desc.routingFee +
-                _TOLERANCE
-        ) revert("Invalid amounts");
+        if (desc.minOutputAmount > desc.outputAmount) revert("Slippage limit too large");
 
         // Handle native token input validation
         if (address(desc.inputToken) == _nativeToken) {
-            if (msg.value != inputAmount)
-                revert("Invalid native token input amount");
+            if (msg.value != inputAmount) revert("Invalid native token input amount");
         } else {
             if (msg.value != 0) revert("Invalid native token input amount");
             desc.inputToken.safeTransferFromUniversal(
@@ -258,8 +240,7 @@ contract GluexRouter is EthReceiver {
         }
 
         // Ensure final output amount meets the minimum required
-        if (finalOutputAmount < desc.minOutputAmount)
-            revert("Negative slippage too large");
+        if (finalOutputAmount < desc.minOutputAmount) revert("Negative slippage too large");
 
         // Transfer the final output amount to the receiver
         uniTransfer(
@@ -363,12 +344,4 @@ contract GluexRouter is EthReceiver {
         _MIN_FEE = minFee;
     }
 
-    /**
-     * @notice Updates the tolerance.
-     * @param tolerance The new tolerance to be set.
-     * @dev This function is restricted to the treasury.
-     */
-    function setTolerance(uint256 tolerance) external onlyAuthorized {
-        _TOLERANCE = tolerance;
-    }
 }
