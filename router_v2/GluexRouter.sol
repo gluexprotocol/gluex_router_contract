@@ -169,8 +169,7 @@ contract GluexRouter is EthReceiver {
         // Validate route parameters
         if (desc.minOutputAmount <= 0) revert("Negative slippage limit");
         if (desc.minOutputAmount > desc.outputAmount) revert("Slippage limit too large");
-        if (desc.routingFee <= 0) revert("Negative routing fee");
-        if (desc.partnerFee < 0) revert("Negative partner fee");
+
         if (
             desc.outputAmount <
             desc.effectiveOutputAmount +
