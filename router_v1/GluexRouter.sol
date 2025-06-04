@@ -218,7 +218,7 @@ contract GluexRouter is EthReceiver {
         // Ensure final output amount meets the minimum required
         if (finalOutputAmount < desc.minOutputAmount) revert("Negative slippage too large");
 
-        if (finalOutputAmount > desc.externalOutputAmount) {
+        if (desc.externalOutputAmount > 0 && finalOutputAmount > desc.externalOutputAmount) {
             // Part of surplus is shared with the partners and treasury
             uint256 surplus = finalOutputAmount - desc.externalOutputAmount;
             uint256 partnerShare = 0;
@@ -227,12 +227,16 @@ contract GluexRouter is EthReceiver {
             // Transfer partner share to the partner address
             if (desc.partnerAddress != address(0)) {
                 partnerShare = (surplus * desc.partnerSurplus) / 10000;
-                uniTransfer(IERC20(desc.outputToken), desc.partnerAddress, partnerShare);
+                if (partnerShare > 0) {
+                    uniTransfer(IERC20(desc.outputToken), desc.partnerAddress, partnerShare);
+                }
             }
 
             // Transfer routing share to the treasury address
             routingShare = (surplus * desc.routingSurplus) / 10000;
-            uniTransfer(IERC20(desc.outputToken), payable(_gluexTreasury), routingShare);
+            if (routingShare > 0) {
+                uniTransfer(IERC20(desc.outputToken), payable(_gluexTreasury), routingShare);
+            }
 
             // Transfer the final output amount to the receiver address after deducting surplus fee
             finalOutputAmount = finalOutputAmount - partnerShare - routingShare;
