@@ -77,7 +77,7 @@ contract GluexRouter is EthReceiver {
     // Constants
     uint256 public _RAW_CALL_GAS_LIMIT = 5500;
     uint256 public _MAX_FEE = 15; // 15 bps (0.15%)
-    uint256 public _MIN_FEE = 1; // 1 bps (0.01%)
+    uint256 public _MIN_FEE = 0; // 0 bps (0.00%)
     uint256 public _TOLERANCE = 1000;
 
     // State Variables
