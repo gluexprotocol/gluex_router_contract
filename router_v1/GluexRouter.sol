@@ -35,6 +35,7 @@ contract GluexRouter is EthReceiver {
      * @param partnerFee The fee charged for the partner.
      * @param routingFee The fee charged for the routing operation.
      * @param finalOutputAmount The actual output amount received after routing.
+     * @param surplus The difference between final output amount and external output amount.
      */
     event Routed(
         bytes indexed uniquePID,
@@ -46,7 +47,8 @@ contract GluexRouter is EthReceiver {
         uint256 outputAmount,
         uint256 partnerFee,
         uint256 routingFee,
-        uint256 finalOutputAmount
+        uint256 finalOutputAmount,
+        uint256 surplus
     );
 
     // DataTypes
@@ -218,9 +220,11 @@ contract GluexRouter is EthReceiver {
         // Ensure final output amount meets the minimum required
         if (finalOutputAmount < desc.minOutputAmount) revert("Negative slippage too large");
 
+        uint256 surplus = 0;
+
         if (desc.externalOutputAmount > 0 && finalOutputAmount > desc.externalOutputAmount) {
             // Part of surplus is shared with the partners and treasury
-            uint256 surplus = finalOutputAmount - desc.externalOutputAmount;
+            surplus = finalOutputAmount - desc.externalOutputAmount;
             uint256 partnerShare = 0;
             uint256 routingShare = 0;
 
@@ -256,7 +260,8 @@ contract GluexRouter is EthReceiver {
             desc.outputAmount,
             desc.partnerFee,
             routingFee,
-            finalOutputAmount
+            finalOutputAmount,
+            surplus
         );
     }
 
