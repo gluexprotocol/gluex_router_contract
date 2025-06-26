@@ -62,13 +62,12 @@ contract GluexRouter is EthReceiver {
         address payable outputReceiver; // Address to receive the output token
         address payable partnerAddress; // Address of the partner receiving surplus share
         uint256 inputAmount; // Amount of input token
-        uint256 outputAmount; // Original output amount
-        uint256 partnerFee; // Fee for the partner
-        uint256 routingFee; // Fee for the routing operation
-        uint256 externalOutputAmount; // External output amount for comparison
-        uint256 partnerSurplus; // Percentage (in bps) of surplus shared with the partner
-        uint256 routingSurplus; // Percentage (in bps) of surplus shared with the treasury
-        uint256 effectiveOutputAmount; // Effective output after deducting the routing fee
+        uint256 outputAmount; // Optimizer output amount
+        uint256 partnerFee; // Fee charged by the partner
+        uint256 routingFee; // Fee charged for routing operation
+        uint256 partnerSurplusShare; // Percentage (in bps) of surplus shared with the partner
+        uint256 routingSurplusShare; // Percentage (in bps) of surplus shared with GlueX
+        uint256 effectiveOutputAmount; // Effective output amount for the user
         uint256 minOutputAmount; // Minimum acceptable output amount
         bool isPermit2; // Whether to use Permit2 for token transfers
         bytes uniquePID; // Unique identifier for the partner
@@ -78,6 +77,7 @@ contract GluexRouter is EthReceiver {
     uint256 public _RAW_CALL_GAS_LIMIT = 5500;
     uint256 public _MAX_FEE = 15; // 15 bps (0.15%)
     uint256 public _MIN_FEE = 0; // 0 bps (0.00%)
+    uint256 public _PARTNER_SURPLUS_SHARE_LIMIT = 5000; // 50% (5000 bps)
     uint256 public _TOLERANCE = 1000;
 
     // State Variables
@@ -152,17 +152,21 @@ contract GluexRouter is EthReceiver {
      * @param desc The route description containing input, output, and fee details.
      * @param interactions The interactions encoded for execution by the executor.
      * @return finalOutputAmount The final amount of output token received.
+     * @return surplus The surplus amount on this route.
      * @dev Ensures strict validation of slippage, routing fees, and input/output parameters.
      */
     function swap(
         IExecutor executor,
         RouteDescription calldata desc,
         Interaction[] calldata interactions
-    ) external payable returns (uint256 finalOutputAmount) {
+    ) external payable returns (uint256 finalOutputAmount, uint256 surplus) {
 
         // Validate routing fee
         if (desc.routingFee > (desc.outputAmount * _MAX_FEE) / 10000) revert("Routing fee too high");
         if (desc.routingFee < (desc.outputAmount * _MIN_FEE) / 10000) revert("Routing fee too low");
+
+        // Validate partner surplus share
+        if (desc.partnerSurplusShare > _PARTNER_SURPLUS_SHARE_LIMIT) revert("Partner surplus share too high");
 
         // Validate non-zero addresses
         checkZeroAddress(desc.inputReceiver);
@@ -217,38 +221,49 @@ contract GluexRouter is EthReceiver {
             finalOutputAmount = outputBalanceAfter - outputBalanceBefore;
         }
 
+        // Surplus calculation
+        if (finalOutputAmount >= desc.outputAmount && desc.outputAmount > desc.effectiveOutputAmount) {
+            surplus = desc.outputAmount - desc.effectiveOutputAmount;
+            finalOutputAmount = desc.effectiveOutputAmount + finalOutputAmount - desc.outputAmount;
+        }  else if (desc.outputAmount > finalOutputAmount && finalOutputAmount > desc.effectiveOutputAmount) {
+            surplus = finalOutputAmount - desc.effectiveOutputAmount;
+            finalOutputAmount = desc.effectiveOutputAmount;
+        } else {
+            surplus = 0;
+            finalOutputAmount = finalOutputAmount;
+        }
+
+        if (surplus > 0) {
+            // Calculate and transfer partner surplus
+            uint256 partnerShare = (surplus * desc.partnerSurplusShare) / 10000;
+            if (partnerShare > 0) {
+                uniTransfer(
+                    IERC20(desc.outputToken),
+                    desc.partnerAddress,
+                    partnerShare
+                );
+            }
+
+            // Calculate and transfer routing surplus
+            uint256 routingShare = surplus - partnerShare;
+            if (routingShare > 0) {
+                uniTransfer(
+                    IERC20(desc.outputToken),
+                    payable(_gluexTreasury),
+                    routingShare
+                );
+            }
+        }
+
         // Ensure final output amount meets the minimum required
         if (finalOutputAmount < desc.minOutputAmount) revert("Negative slippage too large");
 
-        uint256 surplus = 0;
-
-        if (desc.externalOutputAmount > 0 && finalOutputAmount > desc.externalOutputAmount) {
-            // Part of surplus is shared with the partners and treasury
-            surplus = finalOutputAmount - desc.externalOutputAmount;
-            uint256 partnerShare = 0;
-            uint256 routingShare = 0;
-
-            // Transfer partner share to the partner address
-            if (desc.partnerAddress != address(0)) {
-                partnerShare = (surplus * desc.partnerSurplus) / 10000;
-                if (partnerShare > 0) {
-                    uniTransfer(IERC20(desc.outputToken), desc.partnerAddress, partnerShare);
-                }
-            }
-
-            // Transfer routing share to the treasury address
-            routingShare = (surplus * desc.routingSurplus) / 10000;
-            if (routingShare > 0) {
-                uniTransfer(IERC20(desc.outputToken), payable(_gluexTreasury), routingShare);
-            }
-
-            // Transfer the final output amount to the receiver address after deducting surplus fee
-            finalOutputAmount = finalOutputAmount - partnerShare - routingShare;
-            uniTransfer(IERC20(desc.outputToken), desc.outputReceiver, finalOutputAmount);
-        } else {
-            // Transfer the final output amount to the receiver address without
-            uniTransfer(IERC20(desc.outputToken), desc.outputReceiver, finalOutputAmount);
-        }
+        // Transfer the final output amount to the output receiver
+        uniTransfer(
+            IERC20(desc.outputToken),
+            desc.outputReceiver,
+            finalOutputAmount
+        );
 
         emit Routed(
             desc.uniquePID,
