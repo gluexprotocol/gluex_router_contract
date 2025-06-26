@@ -175,18 +175,6 @@ contract GluexRouter is EthReceiver {
         // Validate route parameters
         if (desc.minOutputAmount <= 0) revert("Negative slippage limit");
         if (desc.minOutputAmount > desc.outputAmount) revert("Slippage limit too large");
-        if (
-            desc.outputAmount <
-            desc.effectiveOutputAmount +
-                desc.partnerFee +
-                desc.routingFee -
-                _TOLERANCE ||
-            desc.outputAmount >
-            desc.effectiveOutputAmount +
-                desc.partnerFee +
-                desc.routingFee +
-                _TOLERANCE
-        ) revert("Invalid amounts");
 
         // Handle native token input validation
         if (address(desc.inputToken) == _nativeToken) {
@@ -224,10 +212,10 @@ contract GluexRouter is EthReceiver {
         // Surplus calculation
         if (finalOutputAmount >= desc.outputAmount && desc.outputAmount > desc.effectiveOutputAmount) {
             surplus = desc.outputAmount - desc.effectiveOutputAmount;
-            finalOutputAmount = desc.effectiveOutputAmount + finalOutputAmount - desc.outputAmount;
+            finalOutputAmount = finalOutputAmount - surplus;
         }  else if (desc.outputAmount > finalOutputAmount && finalOutputAmount > desc.effectiveOutputAmount) {
             surplus = finalOutputAmount - desc.effectiveOutputAmount;
-            finalOutputAmount = desc.effectiveOutputAmount;
+            finalOutputAmount = finalOutputAmount - surplus;
         } else {
             surplus = 0;
             finalOutputAmount = finalOutputAmount;
