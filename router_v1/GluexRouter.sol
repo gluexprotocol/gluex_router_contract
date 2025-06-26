@@ -233,6 +233,9 @@ contract GluexRouter is EthReceiver {
             finalOutputAmount = finalOutputAmount;
         }
 
+        // Ensure final output amount meets the minimum required
+        if (finalOutputAmount < desc.minOutputAmount) revert("Negative slippage too large");
+
         if (surplus > 0) {
             // Calculate and transfer partner surplus
             uint256 partnerShare = (surplus * desc.partnerSurplusShare) / 10000;
@@ -254,9 +257,6 @@ contract GluexRouter is EthReceiver {
                 );
             }
         }
-
-        // Ensure final output amount meets the minimum required
-        if (finalOutputAmount < desc.minOutputAmount) revert("Negative slippage too large");
 
         // Transfer the final output amount to the output receiver
         uniTransfer(
