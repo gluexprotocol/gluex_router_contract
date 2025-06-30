@@ -173,13 +173,18 @@ contract GluexRouter is EthReceiver {
         // Validate the route description
         validateSwap(desc);
 
-        // Transfer input tokens to the contract
-        desc.inputToken.safeTransferFromUniversal(
-            msg.sender,
-            desc.inputReceiver,
-            desc.inputAmount,
-            desc.isPermit2
-        );
+        // Token transfer validation
+        if (address(desc.inputToken) == _nativeToken) {
+            if (msg.value != desc.inputAmount) revert InvalidNativeTokenInputAmount();
+        } else {
+            if (msg.value != 0) revert InvalidNativeTokenInputAmount();
+            desc.inputToken.safeTransferFromUniversal(
+                msg.sender,
+                desc.inputReceiver,
+                desc.inputAmount,
+                desc.isPermit2
+            );
+        }
 
         // Execute the interactions using executor
         finalOutputAmount = executeInteractions(
@@ -290,13 +295,6 @@ contract GluexRouter is EthReceiver {
         // Validate route parameters
         if (desc.minOutputAmount <= 0) revert NegativeSlippage();
         if (desc.minOutputAmount > desc.outputAmount) revert SlippageLimitTooLarge();
-
-        // Handle native token input validation
-        if (address(desc.inputToken) == _nativeToken) {
-            if (msg.value != desc.inputAmount) revert InvalidNativeTokenInputAmount();
-        } else {
-            if (msg.value != 0) revert InvalidNativeTokenInputAmount();
-        }
     }
 
     /**
