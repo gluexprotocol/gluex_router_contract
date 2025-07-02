@@ -44,13 +44,11 @@ contract GluexRouter is EthReceiver {
      * @param inputToken The ERC20 token used as input.
      * @param inputAmount The amount of input token used for routing.
      * @param outputToken The ERC20 token received as output.
-     * @param outputAmount The output amount from the description.
-     * @param effectiveOutputAmount The effective output amount from the description.
+     * @param finalOutputAmount The actual output amount received after routing.
      * @param partnerFee The fee charged for the partner.
      * @param routingFee The fee charged for the routing operation.
-     * @param finalOutputAmount The actual output amount received after routing.
-     * @param surplus The surplus from the swap shared between partner and protocol.
-     * @param slippage The positive slippage from the swap shared between user, partner and protocol.
+     * @param partnerShare The share of surplus and slippage given to the partner.
+     * @param protocolShare The share of surplus and slippage given to the GlueX protocol.
      */
     event Routed(
         bytes indexed uniquePID,
@@ -59,13 +57,11 @@ contract GluexRouter is EthReceiver {
         IERC20 inputToken,
         uint256 inputAmount,
         IERC20 outputToken,
-        uint256 outputAmount,
-        uint256 effectiveOutputAmount,
+        uint256 finalOutputAmount,
         uint256 partnerFee,
         uint256 routingFee,
-        uint256 finalOutputAmount,
-        uint256 surplus,
-        uint256 slippage
+        uint256 partnerShare,
+        uint256 protocolShare
     );
 
     // DataTypes
@@ -173,14 +169,13 @@ contract GluexRouter is EthReceiver {
      * @param desc The route description containing input, output, and fee details.
      * @param interactions The interactions encoded for execution by the executor.
      * @return finalOutputAmount The final amount of output token received.
-     * @return surplus The surplus amount on this route.
      * @dev Ensures strict validation of slippage, routing fees, and input/output parameters.
      */
     function swap(
         IExecutor executor,
         RouteDescription calldata desc,
         Interaction[] calldata interactions
-    ) external payable returns (uint256 finalOutputAmount, uint256 surplus, uint256 slippage) {
+    ) external payable returns (uint256 finalOutputAmount) {
 
         // Validate the route description
         validateSwap(desc);
@@ -206,6 +201,7 @@ contract GluexRouter is EthReceiver {
         );
 
         // Calculate final output amount
+        uint256 partnerFee = desc.partnerFee;
         uint256 routingFee = 0;
         if (finalOutputAmount > desc.effectiveOutputAmount + desc.routingFee) {
             finalOutputAmount = finalOutputAmount - desc.routingFee;
@@ -218,6 +214,8 @@ contract GluexRouter is EthReceiver {
         }
 
         // Surplus and Slippage calculation
+        uint256 surplus = 0;
+        uint256 slippage = 0;
         if (finalOutputAmount >= desc.outputAmount && desc.outputAmount >= desc.effectiveOutputAmount) {
             surplus = desc.outputAmount - desc.effectiveOutputAmount;
             slippage = finalOutputAmount - desc.effectiveOutputAmount;
@@ -229,16 +227,18 @@ contract GluexRouter is EthReceiver {
             slippage = 0;
         }
 
+        uint256 partnerShare = 0;
+        uint256 protocolShare = 0;
         if (surplus != 0 || slippage != 0) {
             // Calculate and transfer partner surplus
             uint256 partnerSurplus = (surplus * desc.partnerSurplusShare) / 10000;
             uint256 partnerSlippage = (slippage * desc.partnerSlippageShare) / 10000;
-            uint256 partnerShare = partnerSurplus + partnerSlippage;
+            partnerShare = partnerSurplus + partnerSlippage;
 
             // Calculate and transfer routing surplus
             uint256 protocolSurplus = surplus - partnerShare;
             uint256 protocolSlippage = (slippage * desc.protocolSlippageShare) / 10000;
-            uint256 protocolShare = protocolSurplus + protocolSlippage;
+            protocolShare = protocolSurplus + protocolSlippage;
 
             finalOutputAmount -= (partnerShare + protocolShare);
 
@@ -274,13 +274,11 @@ contract GluexRouter is EthReceiver {
             desc.inputToken,
             desc.inputAmount,
             desc.outputToken,
-            desc.outputAmount,
-            desc.effectiveOutputAmount,
-            desc.partnerFee,
-            routingFee,
             finalOutputAmount,
-            surplus,
-            slippage
+            partnerFee,
+            routingFee,
+            partnerShare,
+            protocolShare
         );
     }
 
