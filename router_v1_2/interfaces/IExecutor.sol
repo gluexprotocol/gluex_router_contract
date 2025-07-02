@@ -11,4 +11,9 @@ interface IExecutor {
         Interaction[] calldata interactions,
         IERC20 outputToken
     ) external payable;
+
+    /// @notice propagates information about original msg.sender and executes arbitrary data
+    function executeHooks(
+        Interaction[] calldata hooks
+    ) external payable;
 }

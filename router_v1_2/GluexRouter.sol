@@ -158,7 +158,6 @@ contract GluexRouter is EthReceiver {
 
     /**
      * @notice Executes a route using the specified executor and interactions.
-     * @param hooksExecutor The executor contract that handles pre and post hooks.
      * @param executor The executor contract that performs the interactions.
      * @param desc The route description containing input, output, and fee details.
      * @param interactions The interactions encoded for execution by the executor.
@@ -167,7 +166,6 @@ contract GluexRouter is EthReceiver {
      * @dev Ensures strict validation of slippage, routing fees, and input/output parameters.
      */
     function swap(
-        IHooksExecutor hooksExecutor,
         Interaction[] calldata preHooks,
         IExecutor executor,
         RouteDescription calldata desc,
@@ -176,7 +174,7 @@ contract GluexRouter is EthReceiver {
     ) external payable returns (uint256 finalOutputAmount, uint256 surplus, uint256 slippage) {
         
         // Execute pre-hooks
-        hooksExecutor.executeHooks(preHooks);
+        executor.executeHooks(preHooks);
 
         // Validate the route description
         validateSwap(desc);
@@ -296,7 +294,7 @@ contract GluexRouter is EthReceiver {
         );
 
         // Execute post-hooks
-        hooksExecutor.executeHooks(postHooks);
+        executor.executeHooks(postHooks);
     }
 
     /**
