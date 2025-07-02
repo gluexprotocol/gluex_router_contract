@@ -11,4 +11,9 @@ interface IExecutor {
         Interaction[] calldata interactions,
         IERC20 outputToken
     ) external payable;
+
+    /// @notice executes arbitrary data for hooks
+    function executeHooks(
+        Interaction[] calldata hooks
+    ) external payable;
 }
