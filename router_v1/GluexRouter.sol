@@ -51,7 +51,7 @@ contract GluexRouter is EthReceiver {
      * @param protocolShare The share of surplus and slippage given to the GlueX protocol.
      */
     event Routed(
-        bytes indexed uniquePID,
+        bytes32 indexed uniquePID,
         address indexed userAddress,
         address outputReceiver,
         IERC20 inputToken,
@@ -85,7 +85,7 @@ contract GluexRouter is EthReceiver {
         uint256 effectiveOutputAmount; // Effective output amount for the user
         uint256 minOutputAmount; // Minimum acceptable output amount
         bool isPermit2; // Whether to use Permit2 for token transfers
-        bytes uniquePID; // Unique identifier for the partner
+        bytes32 uniquePID; // Unique identifier for the partner
     }
 
     // Constants
