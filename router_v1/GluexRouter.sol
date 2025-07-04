@@ -51,7 +51,7 @@ contract GluexRouter is EthReceiver {
      * @param protocolShare The share of surplus and slippage given to the GlueX protocol.
      */
     event Routed(
-        bytes indexed uniquePID,
+        bytes32 indexed uniquePID,
         address indexed userAddress,
         address outputReceiver,
         IERC20 inputToken,
@@ -85,7 +85,7 @@ contract GluexRouter is EthReceiver {
         uint256 effectiveOutputAmount; // Effective output amount for the user
         uint256 minOutputAmount; // Minimum acceptable output amount
         bool isPermit2; // Whether to use Permit2 for token transfers
-        bytes uniquePID; // Unique identifier for the partner
+        bytes32 uniquePID; // Unique identifier for the partner
     }
 
     // Constants
@@ -207,8 +207,8 @@ contract GluexRouter is EthReceiver {
             finalOutputAmount = finalOutputAmount - desc.routingFee;
             routingFee = desc.routingFee;
         } else if (finalOutputAmount > desc.effectiveOutputAmount) {
-            finalOutputAmount = desc.effectiveOutputAmount;
             routingFee = finalOutputAmount - desc.effectiveOutputAmount;
+            finalOutputAmount = desc.effectiveOutputAmount;
         } else {
             finalOutputAmount = finalOutputAmount;
         }
@@ -236,18 +236,22 @@ contract GluexRouter is EthReceiver {
             partnerShare = partnerSurplus + partnerSlippage;
 
             // Calculate and transfer routing surplus
-            uint256 protocolSurplus = surplus - partnerShare;
+            uint256 protocolSurplus = surplus - partnerSurplus;
             uint256 protocolSlippage = (slippage * desc.protocolSlippageShare) / 10000;
             protocolShare = protocolSurplus + protocolSlippage;
 
             finalOutputAmount -= (partnerShare + protocolShare);
 
             if (partnerShare != 0) {
-                uniTransfer(
-                    desc.outputToken,
-                    desc.partnerAddress,
-                    partnerShare
-                );
+                if (desc.partnerAddress != address(0)) {
+                    uniTransfer(
+                        desc.outputToken,
+                        desc.partnerAddress,
+                        partnerShare
+                    );
+                } else {
+                    protocolShare += partnerShare; // If no partner address, add to protocol share
+                }
             }
 
             uniTransfer(
