@@ -3,21 +3,21 @@ pragma solidity ^0.8.0;
 
 import {EthReceiver} from "./utils/EthReceiver.sol";
 import {Interaction, RouteDescription} from "./base/RouterStructs.sol";
-import {CallbackHookData} from "./base/HooksStructs.sol";
+import {CallbackData} from "./base/CallbackStructs.sol";
 import {IExecutor} from "./interfaces/IExecutor.sol";
-import {IGluexCallbackHook} from "./interfaces/IGluexCallbackHook.sol";
+import {IGluexSettler} from "./interfaces/IGluexSettler.sol";
 import {IERC20} from "./interfaces/IERC20.sol";
 import {SafeERC20} from "./lib/SafeERC20.sol";
 
 /*
     * @title GlueX Protocol
     * @notice This contract implements GlueX Protocol's approach to "structured settlements".
-    * The most simple structure settlement is a spot token swap. However, GlueX Hooks are capable of 
-    * embedding more complex logic into the settlement flow into so-called "structured settlement" via
-    * GlueX callback hooks. 
-    * A GlueX Callback Hook can open vulnerabilities if not implemented correctly. Please, restrain
-    * from using GlueX Callback Hooks that have not been officially released by the GlueX team.
-    * @dev The contract is designed to be used in conjunction with official GlueX Hooks only.
+    * The most simple structure settlement is a spot token swap. However, GlueX settlements are capable of 
+    * embedding more complex logic into the settlement flow into so-called "structured settlement" via 
+    * GluxSettlers that define the logic of a structured settlement and ensure they are safe to execute. 
+    * A GluexSettlers can be unsafe if not implemented correctly. Please, restrain
+    * from using GluexSettlers that have not been officially released by the GlueX team.
+    * @dev The contract is designed to be used in conjunction with official GluexSettlers only.
 */
 contract GluexProtocolSettlement is EthReceiver {
     using SafeERC20 for IERC20;
@@ -138,27 +138,27 @@ contract GluexProtocolSettlement is EthReceiver {
     }
 
     /**
-     * @notice Executes a structured settlement using the provided hooks, executor and interactions.
-     * @param preHookCallbackParams The parameters for the pre-hook callback, including value and data.
+     * @notice Executes a structured settlement using the provided callbacks, executor and interactions.
+     * @param preRouteCallbackParams The parameters for the pre-route callback, including value and data.
      * @param executor The executor contract that performs the interactions.
      * @param desc The route description containing input, output, and fee details.
      * @param interactions The interactions encoded for execution by the executor.
-     * @param postHookCallbackParams The parameters for the post-hook callback, including value and data.
+     * @param postRouteCallbackParams The parameters for the post-route callback, including value and data.
      * @return finalOutputAmount The final amount of output token received.
      * @return surplus The surplus amount on this route.
      * @dev Ensures strict validation of slippage, routing fees, and input/output parameters.
     */
     function settle(
-        CallbackHookData preHookCallbackParams,
+        CallbackData preRouteCallbackParams,
         IExecutor executor,
         RouteDescription calldata desc,
         Interaction[] calldata interactions,
-        CallbackHookData postHookCallbackParams,
+        CallbackData postRouteCallbackParams,
     ) external payable returns (uint256 finalOutputAmount, uint256 surplus, uint256 slippage) {
         
-        // Execute pre-hook callback
-        if (preHookCallbackParams.data.length != 0) {
-            IGluexCallbackHook(msg.sender){value: preHookCallbackParams.value}.executePreHookCallback(preHookCallbackParams.data);
+        // Execute pre-route callback
+        if (preRouteCallbackParams.data.length != 0) {
+            IGluexSettler(msg.sender){value: preRouteCallbackParams.value}.executePreRouteCallback(preRouteCallbackParams.data);
         }
 
         // Validate the route description
@@ -279,8 +279,8 @@ contract GluexProtocolSettlement is EthReceiver {
         );
 
         // Execute post-hook callback
-        if (postHookCallbackParams.data.length != 0) {
-            IGluexCallbackHook(msg.sender){value: postHookCallbackParams.value}.executePostHookCallback(postHookCallbackParams.data);
+        if (postRouteCallbackParams.data.length != 0) {
+            IGluexSettler(msg.sender){value: postRouteCallbackParams.value}.executePostRouteCallback(postRouteCallbackParams.data);
         }
     }
 

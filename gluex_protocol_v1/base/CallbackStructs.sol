@@ -1,7 +1,7 @@
 /**
-     * @dev A generic structure defining the parameters for a callback hook.
+     * @dev A generic structure defining the parameters for a callback.
      */
-    struct CallbackHookData {
+    struct CallbackData {
         bytes data; // Encoded data for the callback hook
         uint256 value; // Value to be sent with the callback, if applicable
     }
