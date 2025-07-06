@@ -3,7 +3,8 @@ pragma solidity ^0.8.0;
 
 import {AaveV3FlashLoaner} from "./utils/AaveV3FlashLoaner.sol";
 import {GluexSettler} from "./utils/GluexSettler.sol";
-import {IPool, IERC20} from "./interfaces/IPool.sol";
+import {IERC20} from "./interfaces/IERC20.sol";
+import {IPool} from "./interfaces/IPool.sol";
 
 contract GluexAaveV3FlashLoanSimple is GluexSettler, AaveV3FlashLoaner {
 
