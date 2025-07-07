@@ -10,7 +10,7 @@ interface IPool {
         uint256 amount,
         bytes calldata params,
         uint16 referralCode
-    ) public virtual override;
+    ) external;
 
     function borrow(
         address asset,
@@ -18,12 +18,12 @@ interface IPool {
         uint256 interestRateMode,
         uint16 referralCode,
         address onBehalfOf
-    ) public virtual override;
+    ) external;
 
     function repay(
         address asset,
         uint256 amount,
         uint256 interestRateMode,
         address onBehalfOf
-    ) public virtual override returns (uint256);
+    ) external returns (uint256);
 }

@@ -38,7 +38,7 @@ abstract contract GluexSettler {
     /// @dev This function is payable, allowing it to receive Ether if needed for the settlement execution
     /// @dev The function should handle the logic defined in the structured settlement, which may include interacting with other contracts or performing state changes
     function executeStructuredSettlement(
-        bytes calldata settlementParams,
+        bytes calldata settlementParams
     ) external payable virtual;
 
     /// @notice executes predefined settlement callback logic using parameters from data. Never implement without `onlyGluexRouter` modifier!
@@ -47,8 +47,8 @@ abstract contract GluexSettler {
     /// @dev This function is payable, allowing it to receive Ether if needed for the settlement execution
     /// @dev The function should handle the logic defined in the settlement callback, which may include interacting with other contracts or performing state changes
     function executePreRouteCallback(
-        bytes calldata data,
-    ) external payable virtual onlyGluexRouter;
+        bytes calldata data
+    ) external payable virtual;
 
     /// @notice executes predefined settlement callback logic using parameters from data. Never implement without `onlyGluexRouter` modifier!
     /// @param data The encoded data containing the necessary parameters for the settlement callback
@@ -56,6 +56,6 @@ abstract contract GluexSettler {
     /// @dev This function is payable, allowing it to receive Ether if needed for the settlement execution
     /// @dev The function should handle the logic defined in the settlement callback, which may include interacting with other contracts or performing state changes
     function executePostRouteCallback(
-        bytes calldata data,
-    ) external payable virtual onlyGluexRouter;
+        bytes calldata data
+    ) external payable virtual;
 }
