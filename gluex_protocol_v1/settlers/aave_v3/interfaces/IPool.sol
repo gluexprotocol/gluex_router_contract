@@ -19,11 +19,4 @@ interface IPool {
         uint16 referralCode,
         address onBehalfOf
     ) public virtual override;
-
-    function repay(
-        address asset,
-        uint256 amount,
-        uint256 interestRateMode,
-        address onBehalfOf
-    ) public virtual override returns (uint256);
 }
