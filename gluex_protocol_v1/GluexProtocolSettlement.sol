@@ -278,7 +278,7 @@ contract GluexProtocolSettlement is EthReceiver {
             surplus
         );
 
-        // Execute post-hook callback
+        // Execute post-route callback
         if (postRouteCallbackParams.data.length != 0) {
             IGluexSettler(msg.sender){value: postRouteCallbackParams.value}.executePostRouteCallback(postRouteCallbackParams.data);
         }
