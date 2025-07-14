@@ -1,6 +1,7 @@
-import {HyperCoreWriter} from "./utils/HyperCoreWriter.sol";
+import {HyperCoreWriterCaller} from "./utils/HyperCoreWriterCaller.sol";
+import {GluexSettler} from "../../utils/GluexSettler.sol";
 
-contract GluexHyperEVMToHyperCore is GluexSettler, HyperCoreWriter {
+contract GluexHyperEVMToHyperCore is GluexSettler, HyperCoreWriterCaller {
 
     address immutable nativeToken;
 
@@ -40,7 +41,7 @@ contract GluexHyperEVMToHyperCore is GluexSettler, HyperCoreWriter {
                     revert(0, 0)
                 }
             }  
-        };
+        }
 
         // Transfer to effective receiver within HyperCore
         sendSpot(

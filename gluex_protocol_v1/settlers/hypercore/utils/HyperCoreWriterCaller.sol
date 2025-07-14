@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity ^0.8.0;
 
-import {ICoreWriter} from "./interfaces/ICoreWriter.sol";
+import {ICoreWriter} from "../interfaces/ICoreWriter.sol";
 
 /// @title HyperCore Writer
 /// @notice This contract serves as a base for any structured settlement that swaps assets on HyperEVM and deposits them into HyperCore atomically.
