@@ -49,14 +49,12 @@ contract GluexAaveV3FlashLiquidator is GluexSettler, AaveV3FlashLoaner {
     ) external payable override onlyGluexRouter{
 
         // Data must contain the parameters to execute pre-payment of liquidation and sourcing of collateral.
-        (address debtReceiver, uint256 debtAmount, address collateralHolder, address collateralToken, uint256 collateralAmount) = abi.decode(data,(address, uint256, address, address, uint256));
+        (address debtToken, address debtReceiver, uint256 debtAmount, address collateralHolder, address collateralToken, uint256 collateralAmount) = abi.decode(data,(address, address, uint256, address, address, uint256));
 
         // Send liquidated debt sourced from flashloan to lender
-        IERC20(collateralToken).safeTransferFromUniversal(
-            address(this), 
+        IERC20(debtToken).safeTransfer(
             debtReceiver, 
-            debtAmount,
-            false
+            debtAmount
         );
 
         // Send collateral for routing to gluex router (prior approval from holder required)
