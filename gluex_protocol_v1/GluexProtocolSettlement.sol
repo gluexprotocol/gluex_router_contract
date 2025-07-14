@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity ^0.8.0;
 
-import {EthReceiver} from "./utils/EthReceiver.sol";
+import {EthReceiver} from "./lib/EthReceiver.sol";
 import {Interaction, RouteDescription, ShareCalculation, CallbackData} from "./base/DataTypes.sol";
 import {IExecutor} from "./interfaces/IExecutor.sol";
 import {IGluexSettler} from "./interfaces/IGluexSettler.sol";
