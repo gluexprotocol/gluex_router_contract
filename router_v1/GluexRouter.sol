@@ -218,7 +218,7 @@ contract GluexRouter is EthReceiver {
         uint256 slippage = 0;
         if (finalOutputAmount >= desc.outputAmount && desc.outputAmount >= desc.effectiveOutputAmount) {
             surplus = desc.outputAmount - desc.effectiveOutputAmount;
-            slippage = finalOutputAmount - desc.effectiveOutputAmount;
+            slippage = finalOutputAmount - desc.outputAmount;
         } else if (desc.outputAmount > finalOutputAmount && finalOutputAmount > desc.effectiveOutputAmount) {
             surplus = finalOutputAmount - desc.effectiveOutputAmount;
             slippage = 0;
