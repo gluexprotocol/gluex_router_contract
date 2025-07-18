@@ -98,7 +98,7 @@ contract GluexAaveV3FlashLoanSimple is GluexSettler, AaveV3FlashLoaner {
         // permission to the settlementTrigger contract to execute the borrow on its behalf.
         
         (address asset, uint256 amount, uint256 interestRateMode, uint16 referralCode) = abi.decode(data, (address, uint256, uint256, uint16));
-        IPool(settlementTrigger).borrow(asset, amount, interestRateMode, referralCode, msg.sender);
+        IPool(settlementTrigger).borrow(asset, amount, interestRateMode, referralCode, tx.origin);
 
         IERC20(asset).approve(settlementTrigger, amount);
 
