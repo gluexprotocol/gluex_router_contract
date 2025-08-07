@@ -90,6 +90,7 @@ contract GluexProtocolSettlement is EthReceiver {
     constructor(address gluexTreasury, address nativeToken) {
         // Ensure the addresses are not zero
         checkZeroAddress(gluexTreasury);
+        checkZeroAddress(nativeToken);
 
         _gluexTreasury = gluexTreasury;
         _nativeToken = nativeToken;
@@ -171,7 +172,17 @@ contract GluexProtocolSettlement is EthReceiver {
         validateSwap(desc);
 
         // Token transfer
-        handleTokenTransfers(desc);
+        if (address(desc.inputToken) == _nativeToken) {
+            if (msg.value != desc.inputAmount) revert InvalidNativeTokenInputAmount();
+        } else {
+            if (msg.value != 0) revert InvalidNativeTokenInputAmount();
+            desc.inputToken.safeTransferFromUniversal(
+                msg.sender,
+                desc.inputReceiver,
+                desc.inputAmount,
+                desc.isPermit2
+            );
+        }
 
         // Execute the interactions using executor
         finalOutputAmount = executeInteractions(desc, executor, interactions);
@@ -234,41 +245,6 @@ contract GluexProtocolSettlement is EthReceiver {
         if (desc.minOutputAmount == 0) revert InvalidSlippage();
         if (desc.minOutputAmount > desc.outputAmount) revert SlippageLimitTooLarge();
     }
-
-    /**
-     * @notice Handles token transfers for the swap operation
-     * @param desc The route description containing transfer details
-     */
-    function handleTokenTransfers(RouteDescription calldata desc) internal {
-
-        uint256 inputBalance = uniBalanceOf(desc.inputToken, address(this));
-
-        if (inputBalance != desc.inputAmount) {
-            // If funds not fully available, this should be a spot swap
-            if (address(desc.inputToken) == _nativeToken) {
-                // Native funds should have been made available in full
-                revert InvalidNativeTokenInputAmount();
-            } else {
-                // Attempt to source funds in full from msg.sender
-                desc.inputToken.safeTransferFromUniversal(
-                    msg.sender,
-                    desc.inputReceiver,
-                    desc.inputAmount,
-                    desc.isPermit2
-                );
-            }
-
-        } else {
-            // If funds are available, means this is a structured settlement
-            if (address(desc.inputToken) != _nativeToken) {
-                desc.inputToken.safeTransfer(
-                    desc.inputReceiver,
-                    desc.inputAmount
-                );
-            }
-        }
-    }
-
 
     /**
      * @notice Executes the interactions defined in the route description using the specified executor.

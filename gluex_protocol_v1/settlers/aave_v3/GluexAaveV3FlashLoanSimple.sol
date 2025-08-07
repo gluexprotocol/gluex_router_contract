@@ -32,7 +32,7 @@ contract GluexAaveV3FlashLoanSimple is GluexSettler, AaveV3FlashLoaner {
             }
 
             // Update free memory pointer
-            mstore(0x40, add(dest, len))
+            mstore(0x40, add(result, add(0x20, len)))
         }
     }
 
@@ -46,15 +46,25 @@ contract GluexAaveV3FlashLoanSimple is GluexSettler, AaveV3FlashLoaner {
         
         bytes memory stripped = skipSelector(params);
 
-        (, , RouteDescription memory desc, , ) = abi.decode(stripped, (CallbackData, address, RouteDescription, Interaction[], CallbackData));
+        (, , RouteDescription memory desc, , CallbackData memory postRouteCallback) = abi.decode(stripped, (CallbackData, address, RouteDescription, Interaction[], CallbackData));
 
-        // Ensure margin amount lands on GlueX Router prior to flashloan flow
+        // Ensure only 
+        (, , , , address borrower) = abi.decode(postRouteCallback.data, (address, uint256, uint256, uint16, address));
+
+        // Validate settler is being used safely
+        require(borrower == msg.sender, "GlueX: borrower must be the sender");
+        require(address(desc.inputToken) == asset, "GlueX: input token must match flash loan asset");
+
+        // Ensure margin amount is collected from user
         desc.inputToken.safeTransferFromUniversal(
             msg.sender, 
-            gluexRouter, 
+            address(this), 
             desc.marginAmount,
             desc.isPermit2
         );
+
+        // Approve GlueX Router to fetch margin + loan amount
+        IERC20(desc.inputToken).forceApprove(gluexRouter, desc.inputAmount);
 
         // Ensure that the settlementParams are structured correctly to match the expected parameters for Aave's flashLoanSimple
         IPool(settlementTrigger).flashLoanSimple(receiverAddress, asset, amount, params, referralCode); 
@@ -73,13 +83,10 @@ contract GluexAaveV3FlashLoanSimple is GluexSettler, AaveV3FlashLoaner {
 
         require (initiator == address(this), "GlueX: unauthorized operation caller");
 
-        // By construction, Aave v3 Pool sends funds and triggers callback on settler
-        asset.safeTransfer(gluexRouter, amount);
-
         // Params in the context of GluexAaveV3FlashLoanSimple should only be the apprpriate calldata to
         // GlueX Protocol settle() function.
 
-        (success, ) = gluexRouter.call{value: 0}(params);
+        (success, ) = gluexRouter.call(params);
         require(success, "GlueX: router call failed");
         
     }
@@ -87,7 +94,7 @@ contract GluexAaveV3FlashLoanSimple is GluexSettler, AaveV3FlashLoaner {
     function executePreRouteCallback(
         bytes calldata data
     ) external payable override onlyGluexRouter{
-        // Default: no-op
+        revert("GlueX: pre-route callback unsupported");
     }
 
     function executePostRouteCallback(
@@ -97,10 +104,10 @@ contract GluexAaveV3FlashLoanSimple is GluexSettler, AaveV3FlashLoaner {
         // Data must contain parameters to execute borrow of flashloan + fee. Tx.origin must have granted 
         // permission to the settlementTrigger contract to execute the borrow on its behalf.
         
-        (address asset, uint256 amount, uint256 interestRateMode, uint16 referralCode) = abi.decode(data, (address, uint256, uint256, uint16));
-        IPool(settlementTrigger).borrow(asset, amount, interestRateMode, referralCode, msg.sender);
+        (address asset, uint256 amount, uint256 interestRateMode, uint16 referralCode, address borrower) = abi.decode(data, (address, uint256, uint256, uint16, address));
+        IPool(settlementTrigger).borrow(asset, amount, interestRateMode, referralCode, borrower);
 
-        IERC20(asset).approve(settlementTrigger, amount);
+        IERC20(asset).forceApprove(settlementTrigger, amount);
 
         // TODO:
         // Add events to simplify GlueX integrators to track borrowed amounts and assets to render total positions to users

@@ -32,6 +32,30 @@ library SafeERC20 {
     uint256 private constant _RAW_CALL_GAS_LIMIT = 5000;
 
     /**
+     * @notice Attempts to approve a spender to spend a certain amount of tokens.
+     * @dev If `approve(from, to, amount)` fails, it tries to set the allowance to zero, and retries the `approve` call.
+     * Note that the implementation does not perform dirty bits cleaning, so it is the responsibility of
+     * the caller to make sure that the higher 96 bits of the `spender` parameter are clean.
+     * @param token The IERC20 token contract on which the call will be made.
+     * @param spender The address which will spend the funds.
+     * @param value The amount of tokens to be spent.
+     */
+    function forceApprove(
+        IERC20 token,
+        address spender,
+        uint256 value
+    ) internal {
+        if (!_makeCall(token, token.approve.selector, spender, value)) {
+            if (
+                !_makeCall(token, token.approve.selector, spender, 0) ||
+                !_makeCall(token, token.approve.selector, spender, value)
+            ) {
+                revert ForceApproveFailed();
+            }
+        }
+    }
+
+    /**
      * @notice Fetches the balance of a specific ERC20 token held by an account.
      * Consumes less gas then regular `ERC20.balanceOf`.
      * @dev Note that the implementation does not perform dirty bits cleaning, so it is the
