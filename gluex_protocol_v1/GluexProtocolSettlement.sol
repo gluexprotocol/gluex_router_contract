@@ -24,7 +24,8 @@ contract GluexProtocolSettlement is EthReceiver {
     // Errors
     error InsufficientBalance();
     error NativeTransferFailed();
-    error OnlyGlueTreasury();
+    error OnlyGluexTreasury();
+    error OnlyGluexSafe();
     error ZeroAddress();
     error NegativeSlippageLimit();
     error RoutingFeeTooHigh();
@@ -80,18 +81,22 @@ contract GluexProtocolSettlement is EthReceiver {
 
     // State Variables
     address public immutable _nativeToken; // Address of the native token (e.g., Ether on Ethereum)
-    address internal immutable _gluexTreasury; // Address of the GlueX treasury contract
+    address public immutable _gluexSafe; // Safe address for GlueX protocol
+    address internal _gluexTreasury; // Address of the GlueX treasury contract
 
     /**
      * @dev Initializes the contract with the treasury address and native token address.
+     * @param gluexSafe Safe address for GlueX protocol
      * @param gluexTreasury The address of the Glue treasury contract.
      * @param nativeToken The address of the native token.
      */
-    constructor(address gluexTreasury, address nativeToken) {
+    constructor(address gluexSafe, address gluexTreasury, address nativeToken) {
         // Ensure the addresses are not zero
+        checkZeroAddress(gluexSafe);
         checkZeroAddress(gluexTreasury);
         checkZeroAddress(nativeToken);
 
+        _gluexSafe = gluexSafe;
         _gluexTreasury = gluexTreasury;
         _nativeToken = nativeToken;
     }
@@ -105,11 +110,27 @@ contract GluexProtocolSettlement is EthReceiver {
     }
 
     /**
+     * @dev Modifier to restrict access to safe-only functions.
+     */
+    modifier onlySafe() {
+        checkSafe();
+        _;
+    }
+
+    /**
      * @notice Verifies the caller is the Glue treasury.
      * @dev Reverts with `OnlyGlueTreasury` if the caller is not the treasury.
      */
     function checkTreasury() internal view {
-        if (msg.sender != _gluexTreasury) revert OnlyGlueTreasury();
+        if (msg.sender != _gluexTreasury) revert OnlyGluexTreasury();
+    }
+
+    /**
+     * @notice Verifies the caller is the Glue treasury.
+     * @dev Reverts with `OnlyGlueTreasury` if the caller is not the treasury.
+     */
+    function checkSafe() internal view {
+        if (msg.sender != _gluexSafe) revert OnlyGluexSafe();
     }
 
     /**
@@ -122,31 +143,20 @@ contract GluexProtocolSettlement is EthReceiver {
     }
 
     /**
-     * @notice Collects routing fees from specified tokens and transfers them to the given receiver.
-     * @param feeTokens An array of ERC20 tokens from which fees will be collected.
-     * @param receiver The address where collected fees will be transferred.
+     * @notice Sets the GlueX treasury address.
+     * @param gluexTreasury The new GlueX treasury address.
+     * @dev Only callable by the GlueX safe.
      */
-    function collectFees(IERC20[] memory feeTokens, address payable receiver)
-        external
-        onlyTreasury
-    {
-        // Ensure the receiver address is valid
-        checkZeroAddress(receiver);
-
-        // Collect fees for each token
-        uint256 len = feeTokens.length;
-        for (uint256 i = 0; i < len; ) {
-            uint256 feeBalance = uniBalanceOf(feeTokens[i], address(this));
-            uniTransfer(feeTokens[i], receiver, feeBalance);
-
-            unchecked {
-                ++i;
-            }
-        }
+    function setGluexTreasury(address gluexTreasury) external onlySafe {
+        // Ensure the new treasury address is valid
+        checkZeroAddress(gluexTreasury);
+        _gluexTreasury = gluexTreasury;
     }
 
     /**
      * @notice Executes a structured settlement using the provided callbacks, executor and interactions.
+     * @notice This contract is not meant to hold fees under any circumstance. Any fees collected during the 
+     * settlement should be transferred to the GlueX and partner treasuries directly.
      * @param preRouteCallbackParams The parameters for the pre-route callback, including value and data.
      * @param executor The executor contract that performs the interactions.
      * @param desc The route description containing input, output, and fee details.
@@ -187,16 +197,66 @@ contract GluexProtocolSettlement is EthReceiver {
         // Execute the interactions using executor
         finalOutputAmount = executeInteractions(desc, executor, interactions);
 
-        // Calculate routing fee and adjust final output
-        uint256 routingFee = calculateRoutingFee(finalOutputAmount, desc);
-        finalOutputAmount -= routingFee;
+        // Calculate final output amount
+        uint256 partnerFee = desc.partnerFee;
+        uint256 routingFee = 0;
+        if (finalOutputAmount > desc.effectiveOutputAmount + desc.routingFee) {
+            finalOutputAmount = finalOutputAmount - desc.routingFee;
+            routingFee = desc.routingFee;
+        } else if (finalOutputAmount > desc.effectiveOutputAmount) {
+            routingFee = finalOutputAmount - desc.effectiveOutputAmount;
+            finalOutputAmount = desc.effectiveOutputAmount;
+        } else {
+            finalOutputAmount = finalOutputAmount;
+        }
 
-        // Calculate and distribute surplus/slippage shares
-        ShareCalculation memory shares = calculateShares(finalOutputAmount, desc);
-        finalOutputAmount -= (shares.partnerShare + shares.protocolShare);
+        // Surplus and Slippage calculation
+        uint256 surplus = 0;
+        uint256 slippage = 0;
+        if (finalOutputAmount >= desc.outputAmount && desc.outputAmount >= desc.effectiveOutputAmount) {
+            surplus = desc.outputAmount - desc.effectiveOutputAmount;
+            slippage = finalOutputAmount - desc.outputAmount;
+        } else if (desc.outputAmount > finalOutputAmount && finalOutputAmount > desc.effectiveOutputAmount) {
+            surplus = finalOutputAmount - desc.effectiveOutputAmount;
+            slippage = 0;
+        } else {
+            surplus = 0;
+            slippage = 0;
+        }
 
-        // Distribute shares
-        distributeShares(desc, shares);
+        uint256 partnerShare = 0;
+        uint256 protocolShare = 0;
+        if (surplus != 0 || slippage != 0) {
+            // Calculate and transfer partner surplus
+            uint256 partnerSurplus = (surplus * desc.partnerSurplusShare) / 10000;
+            uint256 partnerSlippage = (slippage * desc.partnerSlippageShare) / 10000;
+            partnerShare = partnerSurplus + partnerSlippage;
+
+            // Calculate and transfer routing surplus
+            uint256 protocolSurplus = surplus - partnerSurplus;
+            uint256 protocolSlippage = (slippage * desc.protocolSlippageShare) / 10000;
+            protocolShare = protocolSurplus + protocolSlippage;
+
+            finalOutputAmount -= (partnerShare + protocolShare);
+
+            if (partnerShare != 0) {
+                if (desc.partnerAddress != address(0)) {
+                    uniTransfer(
+                        desc.outputToken,
+                        desc.partnerAddress,
+                        partnerShare
+                    );
+                } else {
+                    protocolShare += partnerShare; // If no partner address, add to protocol share
+                }
+            }
+
+            uniTransfer(
+                desc.outputToken,
+                payable(_gluexTreasury),
+                protocolShare
+            );
+        }
 
         // Ensure final output amount meets the minimum required
         if (finalOutputAmount < desc.minOutputAmount) revert NegativeSlippageLimit();
@@ -208,8 +268,19 @@ contract GluexProtocolSettlement is EthReceiver {
             finalOutputAmount
         );
 
-        // Emit event
-        emitRoutedEvent(desc, finalOutputAmount, routingFee, shares);
+        emit Routed(
+            desc.uniquePID,
+            tx.origin,
+            desc.outputReceiver,
+            desc.inputToken,
+            desc.inputAmount,
+            desc.outputToken,
+            finalOutputAmount,
+            partnerFee,
+            routingFee,
+            partnerShare,
+            protocolShare
+        );
 
         // Execute post-hook callback
         if (postRouteCallbackParams.data.length != 0) {
@@ -242,7 +313,6 @@ contract GluexProtocolSettlement is EthReceiver {
         checkZeroAddress(desc.outputReceiver);
 
         // Validate route parameters
-        if (desc.minOutputAmount == 0) revert InvalidSlippage();
         if (desc.minOutputAmount > desc.outputAmount) revert SlippageLimitTooLarge();
     }
 
@@ -271,122 +341,6 @@ contract GluexProtocolSettlement is EthReceiver {
         uint256 outputBalanceAfter = uniBalanceOf(outputToken, address(this));
 
         finalOutputAmount = outputBalanceAfter - outputBalanceBefore;
-    }
-
-    /**
-     * @notice Calculates the routing fee based on output amount
-     * @param finalOutputAmount The final output amount after interactions
-     * @param desc The route description
-     * @return routingFee The calculated routing fee
-     */
-    function calculateRoutingFee(
-        uint256 finalOutputAmount,
-        RouteDescription calldata desc
-    ) internal pure returns (uint256 routingFee) {
-        if (desc.routingFee != 0) {
-            if (finalOutputAmount > desc.effectiveOutputAmount + desc.routingFee) {
-                routingFee = desc.routingFee;
-            } else if (finalOutputAmount > desc.effectiveOutputAmount) {
-                routingFee = finalOutputAmount - desc.effectiveOutputAmount;
-            } else {
-                routingFee = 0;
-            }
-        } else {
-            routingFee = 0;
-        }
-    }
-
-    /**
-     * @notice Calculates surplus and slippage shares
-     * @param finalOutputAmount The final output amount after fee deduction
-     * @param desc The route description
-     * @return shares The calculated share distribution
-     */
-    function calculateShares(
-        uint256 finalOutputAmount,
-        RouteDescription calldata desc
-    ) internal pure returns (ShareCalculation memory shares) {
-        // Calculate surplus and slippage
-        if (finalOutputAmount >= desc.outputAmount && desc.outputAmount >= desc.effectiveOutputAmount) {
-            shares.surplus = desc.outputAmount - desc.effectiveOutputAmount;
-            shares.slippage = finalOutputAmount - desc.effectiveOutputAmount;
-        } else if (desc.outputAmount > finalOutputAmount && finalOutputAmount > desc.effectiveOutputAmount) {
-            shares.surplus = finalOutputAmount - desc.effectiveOutputAmount;
-            shares.slippage = 0;
-        } else {
-            shares.surplus = 0;
-            shares.slippage = 0;
-        }
-
-        // Calculate shares if there's surplus or slippage
-        if (shares.surplus != 0 || shares.slippage != 0) {
-            uint256 partnerSurplus = (shares.surplus * desc.partnerSurplusShare) / 10000;
-            uint256 partnerSlippage = (shares.slippage * desc.partnerSlippageShare) / 10000;
-            shares.partnerShare = partnerSurplus + partnerSlippage;
-
-            uint256 protocolSurplus = shares.surplus - partnerSurplus;
-            uint256 protocolSlippage = (shares.slippage * desc.protocolSlippageShare) / 10000;
-            shares.protocolShare = protocolSurplus + protocolSlippage;
-        }
-    }
-
-    /**
-     * @notice Distributes calculated shares to partner and protocol
-     * @param desc The route description
-     * @param shares The calculated share distribution
-     */
-    function distributeShares(
-        RouteDescription calldata desc,
-        ShareCalculation memory shares
-    ) internal {
-        if (shares.partnerShare != 0) {
-            if (desc.partnerAddress != address(0)) {
-                uniTransfer(
-                    desc.outputToken,
-                    desc.partnerAddress,
-                    shares.partnerShare
-                );
-            } else {
-                // If no partner address, add to protocol share
-                shares.protocolShare += shares.partnerShare;
-            }
-        }
-
-        if (shares.protocolShare != 0) {
-            uniTransfer(
-                desc.outputToken,
-                payable(_gluexTreasury),
-                shares.protocolShare
-            );
-        }
-    }
-
-    /**
-     * @notice Emits the Routed event with proper variable management
-     * @param desc The route description
-     * @param finalOutputAmount The final output amount
-     * @param routingFee The routing fee charged
-     * @param shares The calculated share distribution
-     */
-    function emitRoutedEvent(
-        RouteDescription calldata desc,
-        uint256 finalOutputAmount,
-        uint256 routingFee,
-        ShareCalculation memory shares
-    ) internal {
-        emit Routed(
-            desc.uniquePID,
-            tx.origin,
-            desc.outputReceiver,
-            desc.inputToken,
-            desc.inputAmount,
-            desc.outputToken,
-            finalOutputAmount,
-            desc.partnerFee,
-            routingFee,
-            shares.partnerShare,
-            shares.protocolShare
-        );
     }
 
     /**

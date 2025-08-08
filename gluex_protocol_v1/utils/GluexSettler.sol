@@ -27,7 +27,7 @@ abstract contract GluexSettler {
     }
 
     modifier onlySettlementTrigger() {
-        // This modifier can be used to restrict access to functions to only GlueX's router contract.
+        // This modifier can be used to restrict access to functions to only settlement trigger contract.
         if (msg.sender != settlementTrigger) revert("GlueX: unauthorized settlement callback caller");
         _;
     }
